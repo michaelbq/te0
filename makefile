@@ -1,23 +1,33 @@
+THIRDLIB = sdl2 opengl glfw3
+LDFLAG = $(shell pkg-config --libs $(THIRDLIB)) -lm
+APP = te0
+CFLAGS = -I. -ggdb
+CXXFLAGS = -I. -ggdb
+CSRCS = $(wildcard *.c)
+CPPSRCS = $(wildcard *.cpp)
+OBJS = $(CSRCS:.c=.o)
+OBJS += $(CPPSRCS:.cpp=.o)
+DEPS = $(OBJS:.o=.d)
 
-CFLAGS = -Wall -g
-LIBS =  -lsdl2 -lopengl32 -lglew32 -mwindows
-APP = te.exe
+ECHO = @echo
 
-SRCS = test.c editor.c la.c
-OBJS = $(subst .c,.o,$(SRCS))
+default_target: $(APP)
 
-default_target : $(APP)
+$(APP): $(OBJS)
+	$(ECHO) "make $@ ..."
+	$(ECHO) "ldflag: $(LDFLAG)"
+	$(CXX) -o $@ $^ $(LDFLAG)
 
-all:
+%.o:%.c
+	$(ECHO) "make pattern c $@ ..."
+	$(CC) $(CFLAGS) -o $@ -c $< -MMD -MF $*.d -MP
+
+%.o:%.cpp
+	$(ECHO) "make pattern cpp $@ ..."
+	$(CXX) $(CXXFLAGS) -o $@ -c $< -MMD -MF $*.d -MP
 
 -include $(DEPS)
 
-$(APP): $(OBJS)
-	$(CC) -o $@ $^ $(LIBS)
-
 clean:
-	rm -rf *.o *.d $(APP)
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $<  -o $@
+	$(RM) $(OBJS) $(DEPS) $(APP)
 

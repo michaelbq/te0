@@ -6,11 +6,6 @@
 #include <sys/param.h>
 #include <SDL2/SDL.h>
 
-#define GLEW_STATIC
-#include <GL/glew.h>
-#define GL_GLEXT_PROTOTYPES
-#include <SDL2/SDL_opengl.h>
-
 #include "editor.h"
 #include "la.h"
 
@@ -76,6 +71,60 @@ void drawText(SDL_Renderer *renderer, SDL_Texture *texture, Vec2f pos, const cha
     }
 }
 
+#define OPENGL_RENDERER
+
+#ifdef OPENGL_RENDERER
+
+#include "glad/glad.h"
+#include <GLFW/glfw3.h>
+
+int main(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    if (!glfwInit())
+    {
+        fprintf(stderr, "glfwInit error\n");
+        exit(1);
+    }
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    GLFWwindow *window = glfwCreateWindow(800, 600, "GLFW test", NULL, NULL);
+    if (window == NULL)
+    {
+        fprintf(stderr, "glfwCreateWindow error\n");
+        exit(1);
+    }
+
+    glfwMakeContextCurrent(window);
+    if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
+        fprintf(stderr, "gladLoadGLLoader error\n");
+        exit(1);
+    }
+    glfwSwapInterval(1);
+
+    while(!glfwWindowShouldClose(window))
+    {
+        glfwPollEvents();
+
+        glClearColor(0.45f, 0.55f, 0.60f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glfwMakeContextCurrent(window);
+        glfwSwapBuffers(window);
+    }
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    return 0;
+}
+#else
 int main(int argc, char *argv[]) 
 {
 
@@ -210,3 +259,5 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+#endif
+

@@ -78,7 +78,10 @@ void drawText(SDL_Renderer *renderer, SDL_Texture *texture, Vec2f pos, const cha
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>
 
-#include "stb_image.h"
+#include <SDL2/SDL_opengl.h>
+
+#include "shader.h"
+#include "texture.h"
 
 void MessageCallback(GLenum source,
                      GLenum type,
@@ -97,52 +100,37 @@ void MessageCallback(GLenum source,
             type, severity, message);
 }
 
-const char *vertexShaderSource =
-    "#version 330 core\n"
-    "out vec2 TexCoord;\n"
-    "void main()\n"
-    "{\n"
-    "   TexCoord = vec2(float(gl_VertexID&1), float((gl_VertexID>>1)&1));\n"
-    "    gl_Position = vec4(TexCoord, 0.0f, 1.0);\n"
-//    "    gl_Position = vec4(TexCoord*2-1, 0.0f, 1.0);\n"
-    "}\0";
-const char *fragmentShaderSource =
-    "#version 330 core\n"
-    "uniform sampler2D font;\n"
-    "in vec2 TexCoord;\n"
-    "void main()\n"
-    "{\n"
-    "    gl_FragColor = texture(font, TexCoord);\n"
-    "}\n\0";
-
 int main(int argc, char *argv[])
 {
     (void)argc;
     (void)argv;
 
-    if (!glfwInit())
+    SDL_Window *window = SDL_CreateWindow("Text Editor", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                                          WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+    M_SCP(window);
     {
-        fprintf(stderr, "glfwInit error\n");
-        exit(1);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+        int major;
+        int minor;
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minor);
+        printf("GL version %d.%d\n", major, minor);
     }
+    SDL_GLContext *pglcontext = SDL_GL_CreateContext(window);
+    M_SCP(pglcontext);
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    GLFWwindow *window = glfwCreateWindow(800, 600, "GLFW test", NULL, NULL);
-    if (window == NULL)
-    {
-        fprintf(stderr, "glfwCreateWindow error\n");
-        exit(1);
-    }
-
-    glfwMakeContextCurrent(window);
-    if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    if(!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
         fprintf(stderr, "gladLoadGLLoader error\n");
         exit(1);
     }
+
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    M_SCP(renderer);
+
     glfwSwapInterval(1);
 
     glEnable(GL_BLEND);
@@ -158,70 +146,33 @@ int main(int argc, char *argv[])
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    int success;
-    char infoLog[512];
-
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if(!success)
+    unsigned int shaderProgram;
+    if(!CreateProgram("vertex.shader", "fragment.shader", &shaderProgram))
     {
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        fprintf(stderr, "ERROR::SHADER::VERTEX::COMPILATION_FAILED:\n**start**\n%s\n**end**\n", infoLog);
-    }
-
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if(!success)
-    {
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        fprintf(stderr, "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED:\n**start**\n%s\n**end\n", infoLog);
-    }
-
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-    if(!success)
-    {
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        fprintf(stderr, "ERROR::SHADER::PROGRAM::LINKING_FAILED\n");
-    }
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    stbi_set_flip_vertically_on_load(true);
-    int width, height, nrChannels;
-    unsigned char *data = stbi_load("ascii.bmp", &width, &height, &nrChannels, 0);
-    if (!data)
-    {
-        fprintf(stderr, "Failed to load texture picture\n");
+        fprintf(stderr, "CreateProgram failed\n");
         exit(1);
     }
-    printf("stbi_load result: width:%d, height:%d, channels:%d\n", width, height, nrChannels);
 
-    glActiveTexture(GL_TEXTURE0);
     unsigned int texture0;
-    glGenTextures(1, &texture0);
-    glBindTexture(GL_TEXTURE_2D, texture0);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    stbi_image_free(data);
-
-    while(!glfwWindowShouldClose(window))
+    if(!LoadTexture("ascii.bmp", &texture0))
     {
-        glfwPollEvents();
+        fprintf(stderr, "LoadTexture failed\n");
+        exit(1);
+    }
+    glActiveTexture(GL_TEXTURE0);
+
+    bool bquit = false;
+    while(!bquit)
+    {
+        SDL_Event event = {0};
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+            case SDL_QUIT: {
+                bquit = true;
+            }
+                break;
+            }
+        }
 
         glClearColor(0.45f, 0.55f, 0.60f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -231,18 +182,13 @@ int main(int argc, char *argv[])
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-        glfwSwapBuffers(window);
+        SDL_GL_SwapWindow(window);
     }
 
     glDeleteVertexArrays(1, &vao);
-    glfwDestroyWindow(window);
-    glfwTerminate();
 
     return 0;
 }
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 
 #else
 int main(int argc, char *argv[]) 

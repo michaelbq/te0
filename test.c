@@ -15,8 +15,7 @@
 #define BMP_CHAR_MAX 126
 #define BMP_ROW 6
 #define BMP_COL 16
-int g_bmp_pre_char_w = 0;
-int g_bmp_pre_char_h = 0;
+
 float g_font_scale = 1.0f;
 
 #define FPS 120
@@ -45,32 +44,6 @@ void p_scc(int c, int lineno) {
 #define M_SCC(c) p_scc(c, __LINE__)
 
 
-void drawCursor(SDL_Renderer *renderer, Vec2f pos) {
-    SDL_Rect rect = {.x = (int)floorf(pos.x), .y = (int)floorf(pos.y), .w = g_bmp_pre_char_w * g_font_scale, .h = g_bmp_pre_char_h * g_font_scale};
-    M_SCC(SDL_SetRenderDrawColor(renderer, 155, 155, 155, 255));
-    M_SCC(SDL_RenderFillRect(renderer, &rect));
-}
-
-void drawChar(SDL_Renderer* renderer, SDL_Texture *texture, Vec2f pos, char c) {
-    if(c >= BMP_CHAR_MIN && c <= BMP_CHAR_MAX) {
-        size_t i = c - BMP_CHAR_MIN;
-        size_t brow = i / BMP_COL;
-        size_t bcol = i % BMP_COL;
-        SDL_Rect srcrect = {.x = bcol * g_bmp_pre_char_w, .y = brow * g_bmp_pre_char_h, .w = g_bmp_pre_char_w, .h = g_bmp_pre_char_h};
-        SDL_Rect dstrect = {.x = (int)floorf(pos.x), .y = (int)floorf(pos.y), .w = g_bmp_pre_char_w * g_font_scale, .h = g_bmp_pre_char_h * g_font_scale};
-        M_SCC(SDL_RenderCopy(renderer, texture, &srcrect, &dstrect));
-    } else {
-        fprintf(stderr, "char %d is out of range\n", c);
-    }
-}
-
-void drawText(SDL_Renderer *renderer, SDL_Texture *texture, Vec2f pos, const char *text, size_t len) {
-    for(size_t i = 0; i < len; i++) {
-        drawChar(renderer, texture, pos, text[i]);
-        pos.x += g_bmp_pre_char_w * g_font_scale;
-    }
-}
-
 #define OPENGL_RENDERER
 
 #ifdef OPENGL_RENDERER
@@ -82,6 +55,33 @@ void drawText(SDL_Renderer *renderer, SDL_Texture *texture, Vec2f pos, const cha
 
 #include "shader.h"
 #include "texture.h"
+
+int g_bmp_pre_char_w = 208/BMP_COL;
+int g_bmp_pre_char_h = 156/BMP_ROW;
+
+struct Glyph
+{
+    Vec2f apos;
+    Vec2f chpos;
+};
+
+struct Glyph g_glyph[1024];
+int g_glyph_num = 0;
+
+
+void drawText(const char* ptext, int len, int row, int col)
+{
+    int i = 0;
+    for(i = 0; i < len; i++)
+    {
+        char c = ptext[i] - 32;
+        g_glyph[g_glyph_num].apos.x =(col+i);
+        g_glyph[g_glyph_num].apos.y = row;
+        g_glyph[g_glyph_num].chpos.x = (float)(c%BMP_COL);
+        g_glyph[g_glyph_num].chpos.y = (float)(c/BMP_COL);
+        g_glyph_num++;
+    }
+}
 
 void MessageCallback(GLenum source,
                      GLenum type,
@@ -128,8 +128,8 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    M_SCP(renderer);
+//    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+//    M_SCP(renderer);
 
     glfwSwapInterval(1);
 
@@ -142,16 +142,28 @@ int main(int argc, char *argv[])
         glDebugMessageCallback(MessageCallback, 0);
     } 
 
-    GLuint vao = 0;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-
     unsigned int shaderProgram;
     if(!CreateProgram("vertex.shader", "fragment.shader", &shaderProgram))
     {
         fprintf(stderr, "CreateProgram failed\n");
         exit(1);
     }
+    glUseProgram(shaderProgram);
+
+    GLuint vao = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    GLuint vbo = 0;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(g_glyph), g_glyph, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(struct Glyph), (void*)offsetof(struct Glyph, apos));
+    glEnableVertexAttribArray(0);
+    glVertexAttribDivisor(0, 1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct Glyph), (void*)offsetof(struct Glyph, chpos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribDivisor(1, 1);
 
     unsigned int texture0;
     if(!LoadTexture("ascii.bmp", &texture0))
@@ -161,16 +173,27 @@ int main(int argc, char *argv[])
     }
     glActiveTexture(GL_TEXTURE0);
 
+    unsigned int scale_uniform = glGetUniformLocation(shaderProgram, "scale");
+    glUniform1f(scale_uniform, g_font_scale);
+
+    const char text[] = "Hello world";
+    g_glyph_num = 0;
+    drawText(text, strlen(text), 0, 0);
+
+    glBufferSubData(GL_ARRAY_BUFFER, 0, g_glyph_num * sizeof(struct Glyph), g_glyph);
+
     bool bquit = false;
     while(!bquit)
     {
         SDL_Event event = {0};
-        while (SDL_PollEvent(&event)) {
-            switch (event.type) {
+        while (SDL_PollEvent(&event))
+        {
+            switch (event.type)
+            {
             case SDL_QUIT: {
                 bquit = true;
             }
-                break;
+            break;
             }
         }
 
@@ -180,7 +203,7 @@ int main(int argc, char *argv[])
         glBindTexture(GL_TEXTURE_2D, texture0);
         glUseProgram(shaderProgram);
         glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, g_glyph_num);
 
         SDL_GL_SwapWindow(window);
     }
@@ -191,6 +214,36 @@ int main(int argc, char *argv[])
 }
 
 #else
+
+int g_bmp_pre_char_w = 0;
+int g_bmp_pre_char_h = 0;
+
+void drawCursor(SDL_Renderer *renderer, Vec2f pos) {
+    SDL_Rect rect = {.x = (int)floorf(pos.x), .y = (int)floorf(pos.y), .w = g_bmp_pre_char_w * g_font_scale, .h = g_bmp_pre_char_h * g_font_scale};
+    M_SCC(SDL_SetRenderDrawColor(renderer, 155, 155, 155, 255));
+    M_SCC(SDL_RenderFillRect(renderer, &rect));
+}
+
+void drawChar(SDL_Renderer* renderer, SDL_Texture *texture, Vec2f pos, char c) {
+    if(c >= BMP_CHAR_MIN && c <= BMP_CHAR_MAX) {
+        size_t i = c - BMP_CHAR_MIN;
+        size_t brow = i / BMP_COL;
+        size_t bcol = i % BMP_COL;
+        SDL_Rect srcrect = {.x = bcol * g_bmp_pre_char_w, .y = brow * g_bmp_pre_char_h, .w = g_bmp_pre_char_w, .h = g_bmp_pre_char_h};
+        SDL_Rect dstrect = {.x = (int)floorf(pos.x), .y = (int)floorf(pos.y), .w = g_bmp_pre_char_w * g_font_scale, .h = g_bmp_pre_char_h * g_font_scale};
+        M_SCC(SDL_RenderCopy(renderer, texture, &srcrect, &dstrect));
+    } else {
+        fprintf(stderr, "char %d is out of range\n", c);
+    }
+}
+
+void drawText(SDL_Renderer *renderer, SDL_Texture *texture, Vec2f pos, const char *text, size_t len) {
+    for(size_t i = 0; i < len; i++) {
+        drawChar(renderer, texture, pos, text[i]);
+        pos.x += g_bmp_pre_char_w * g_font_scale;
+    }
+}
+
 int main(int argc, char *argv[]) 
 {
 

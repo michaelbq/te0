@@ -176,9 +176,11 @@ int main(int argc, char *argv[])
     unsigned int scale_uniform = glGetUniformLocation(shaderProgram, "scale");
     glUniform1f(scale_uniform, g_font_scale);
 
-    const char text[] = "hello world!";
     g_glyph_num = 0;
+    const char text[] = "hello world!";
     drawText(text, strlen(text), 0, 0);
+    const char text2[] = "abcdefg";
+    drawText(text2, strlen(text2), 1, 0);
 
     glBufferSubData(GL_ARRAY_BUFFER, 0, g_glyph_num * sizeof(struct Glyph), g_glyph);
 

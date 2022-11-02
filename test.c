@@ -78,6 +78,43 @@ void drawText(SDL_Renderer *renderer, SDL_Texture *texture, Vec2f pos, const cha
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>
 
+#include "stb_image.h"
+
+void MessageCallback(GLenum source,
+                     GLenum type,
+                     GLuint id,
+                     GLenum severity,
+                     GLsizei length,
+                     const GLchar* message,
+                     const void* userParam)
+{
+    (void) source;
+    (void) id;
+    (void) length;
+    (void) userParam;
+    fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+            (type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
+            type, severity, message);
+}
+
+const char *vertexShaderSource =
+    "#version 330 core\n"
+    "out vec2 TexCoord;\n"
+    "void main()\n"
+    "{\n"
+    "   TexCoord = vec2(float(gl_VertexID&1), float((gl_VertexID>>1)&1));\n"
+    "    gl_Position = vec4(TexCoord, 0.0f, 1.0);\n"
+//    "    gl_Position = vec4(TexCoord*2-1, 0.0f, 1.0);\n"
+    "}\0";
+const char *fragmentShaderSource =
+    "#version 330 core\n"
+    "uniform sampler2D font;\n"
+    "in vec2 TexCoord;\n"
+    "void main()\n"
+    "{\n"
+    "    gl_FragColor = texture(font, TexCoord);\n"
+    "}\n\0";
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -108,6 +145,80 @@ int main(int argc, char *argv[])
     }
     glfwSwapInterval(1);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    //if (GLAD_ARB_debug_output)
+    {
+        glEnable(GL_DEBUG_OUTPUT);
+        glDebugMessageCallback(MessageCallback, 0);
+    } 
+
+    GLuint vao = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    int success;
+    char infoLog[512];
+
+    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+    if(!success)
+    {
+        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        fprintf(stderr, "ERROR::SHADER::VERTEX::COMPILATION_FAILED:\n**start**\n%s\n**end**\n", infoLog);
+    }
+
+    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+    if(!success)
+    {
+        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        fprintf(stderr, "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED:\n**start**\n%s\n**end\n", infoLog);
+    }
+
+    unsigned int shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if(!success)
+    {
+        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        fprintf(stderr, "ERROR::SHADER::PROGRAM::LINKING_FAILED\n");
+    }
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    stbi_set_flip_vertically_on_load(true);
+    int width, height, nrChannels;
+    unsigned char *data = stbi_load("ascii2.png", &width, &height, &nrChannels, 0);
+    if (!data)
+    {
+        fprintf(stderr, "Failed to load texture picture\n");
+        exit(1);
+    }
+    printf("stbi_load result: width:%d, height:%d, channels:%d\n", width, height, nrChannels);
+
+    glActiveTexture(GL_TEXTURE0);
+    unsigned int texture0;
+    glGenTextures(1, &texture0);
+    glBindTexture(GL_TEXTURE_2D, texture0);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(data);
+
     while(!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
@@ -115,15 +226,24 @@ int main(int argc, char *argv[])
         glClearColor(0.45f, 0.55f, 0.60f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glfwMakeContextCurrent(window);
+        glBindTexture(GL_TEXTURE_2D, texture0);
+        glUseProgram(shaderProgram);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
         glfwSwapBuffers(window);
     }
 
+    glDeleteVertexArrays(1, &vao);
     glfwDestroyWindow(window);
     glfwTerminate();
 
     return 0;
 }
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #else
 int main(int argc, char *argv[]) 
 {
